@@ -3,7 +3,11 @@
 	[
 		{
 			"follow_symlinks": true,
-			"path": "."
+			"path": "/Users/flaub/src/anomalies/gogo"
+		},
+		{
+			"follow_symlinks": true,
+			"path": "/Users/flaub/src/vendor/tup"
 		}
 	]
 }

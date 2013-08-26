@@ -1,0 +1,39 @@
+{
+	"vars": [
+		{
+			"name": "CFLAGS", 
+			"value": [
+				"-fPIC", 
+				"-Wall"
+			]
+		}, {
+			"name": "CFLAGS", 
+			"append": true, 
+			"value": [
+				"-g"
+			]
+		}
+	],
+	"macros" : [
+		{
+			"name": "CC",
+			"display": "CC %(IN)",
+			"cmd": "gcc -c %(IN) -o %(OUT) $(CFLAGS)"
+		}, {
+			"name": "LD", 
+			"cmd": "gcc %(IN) -o %(OUT) $(LDFLAGS)"
+		}
+	],
+	"rules": [
+		{
+			"foreach": true,
+			"in": "*.c", 
+			"out": "%(IN:BASE).o",
+			"cmd": "!(CC)"
+		}, {
+			"in": "*.o", 
+			"out": "hello",
+			"cmd": "!(LD)"
+		}
+	]
+}

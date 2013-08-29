@@ -134,44 +134,12 @@ func NewLoopbackNode(path string) *LoopbackNode {
 	}
 }
 
-func InfoToDirent(info os.FileInfo) fuse.Dirent {
-	mode := fuse.DT_Unknown
-	st, _ := info.Sys().(*syscall.Stat_t)
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFSOCK {
-		mode |= fuse.DT_Socket
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFLNK {
-		mode |= fuse.DT_Link
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFREG {
-		mode |= fuse.DT_File
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFBLK {
-		mode |= fuse.DT_Block
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFDIR {
-		mode |= fuse.DT_Dir
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFCHR {
-		mode |= fuse.DT_Char
-	}
-	if (st.Mode & syscall.S_IFMT) == syscall.S_IFIFO {
-		mode |= fuse.DT_FIFO
-	}
-	// mode |= fuse.DirentType(st.Mode & 0x0777)
-	return fuse.Dirent{
-		Name:  info.Name(),
-		Type:  mode,
-		Inode: st.Ino,
-	}
-}
-
-func (this *LoopbackNode) Getattr(req *fuse.GetattrRequest, resp *fuse.GetattrResponse, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.path, req)
-	resp.AttrValid = 1 * time.Minute
-	resp.Attr = this.Attr()
-	return nil
-}
+// func (this *LoopbackNode) Getattr(req *fuse.GetattrRequest, resp *fuse.GetattrResponse, intr fs.Intr) fuse.Error {
+// 	log.Printf("%q %v", this.path, req)
+// 	resp.AttrValid = 1 * time.Minute
+// 	resp.Attr = this.Attr()
+// 	return nil
+// }
 
 func (this *LoopbackNode) Attr() fuse.Attr {
 	// log.Printf("Attr> %q", this.path)
@@ -181,7 +149,7 @@ func (this *LoopbackNode) Attr() fuse.Attr {
 		log.Printf("Attr> failed: %v", err)
 		return fuse.Attr{}
 	}
-	return StatToAttr(&st)
+	return statToAttr(&st)
 }
 
 func (this *LoopbackNode) Lookup(req *fuse.LookupRequest, resp *fuse.LookupResponse, intr fs.Intr) (fs.Node, fuse.Error) {
@@ -361,7 +329,7 @@ func (this *LoopbackNode) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error
 }
 
 func (this *LoopbackNode) Forget() {
-	log.Printf("Forget> %q", this.path)
+	// log.Printf("Forget> %q", this.path)
 }
 
 type LoopbackHandle struct {
@@ -385,7 +353,7 @@ func (this *LoopbackHandle) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 			if info == nil {
 				continue
 			}
-			output = append(output, InfoToDirent(info))
+			output = append(output, fileInfoToDirent(info))
 		}
 
 		if len(infos) < want || err == io.EOF {
@@ -402,7 +370,7 @@ func (this *LoopbackHandle) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 }
 
 func (this *LoopbackHandle) Read(req *fuse.ReadRequest, resp *fuse.ReadResponse, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.file.Name(), req)
+	// log.Printf("%q %v", this.file.Name(), req)
 	resp.Data = make([]byte, req.Size)
 	n, err := this.file.ReadAt(resp.Data, req.Offset)
 	if err != nil && err != io.EOF {
@@ -414,7 +382,7 @@ func (this *LoopbackHandle) Read(req *fuse.ReadRequest, resp *fuse.ReadResponse,
 }
 
 func (this *LoopbackHandle) Write(req *fuse.WriteRequest, resp *fuse.WriteResponse, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.file.Name(), req)
+	// log.Printf("%q %v", this.file.Name(), req)
 	var n int
 	var err error
 	if req.Offset == 0 {
@@ -431,7 +399,7 @@ func (this *LoopbackHandle) Write(req *fuse.WriteRequest, resp *fuse.WriteRespon
 }
 
 func (this *LoopbackHandle) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.file.Name(), req)
+	// log.Printf("%q %v", this.file.Name(), req)
 	err := this.file.Sync()
 	if err != nil {
 		log.Printf("Flush> failed: %v", err)
@@ -441,7 +409,7 @@ func (this *LoopbackHandle) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Err
 }
 
 func (this *LoopbackHandle) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.file.Name(), req)
+	// log.Printf("%q %v", this.file.Name(), req)
 	err := this.file.Close()
 	if err != nil {
 		log.Printf("Release> failed: %v", err)

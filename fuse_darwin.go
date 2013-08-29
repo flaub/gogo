@@ -38,7 +38,7 @@ func fileMode(st *syscall.Stat_t) os.FileMode {
 	return mode
 }
 
-func StatToAttr(st *syscall.Stat_t) fuse.Attr {
+func statToAttr(st *syscall.Stat_t) fuse.Attr {
 	a := fuse.Attr{}
 	a.Inode = uint64(st.Ino)
 	a.Size = uint64(st.Size)

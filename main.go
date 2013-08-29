@@ -6,10 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"syscall"
-
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
 
 	"github.com/aarzilli/golua/lua"
 	"github.com/stevedonovan/luar"
@@ -19,14 +15,13 @@ import (
 
 type Context struct {
 	luaState *lua.State
-	mnt      *fuse.Conn
-	dir      string
+	fs       *FuseSubsystem
 }
 
 func NewContext() *Context {
 	this := &Context{
 		luaState: luar.Init(),
-		dir:      ".gogo",
+		fs:       NewFuseSubsystem(),
 	}
 
 	luar.Register(this.luaState, "gogo", luar.Map{
@@ -34,23 +29,12 @@ func NewContext() *Context {
 		"rule": this.Rule,
 	})
 
-	err := os.MkdirAll(this.dir, os.ModePerm)
-	if err != nil {
-		log.Fatal("Could not create .gogo directory")
-	}
-
-	syscall.Unmount(this.dir, 0) // just in case
-	this.mnt, err = fuse.Mount(this.dir)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	return this
 }
 
-func (this *Context) Close() {
+func (this *Context) Destroy() {
 	this.luaState.Close()
-	syscall.Unmount(this.dir, 0)
+	this.fs.Destroy()
 }
 
 func (this *Context) Rule(command string, inputs, outputs []string) {
@@ -65,7 +49,7 @@ func (this *Context) LoadFile(filename string) {
 }
 
 func (this *Context) Execute(done chan<- error) {
-	done <- fs.Serve(this.mnt, FS{})
+	done <- this.fs.Execute()
 }
 
 func awaitQuitKey(done chan<- bool) {
@@ -84,7 +68,7 @@ func awaitQuitKey(done chan<- bool) {
 
 func main() {
 	ctx := NewContext()
-	defer ctx.Close()
+	defer ctx.Destroy()
 
 	ctx.LoadFile("Gogo.lua")
 
@@ -115,43 +99,4 @@ func main() {
 	case <-quitKey:
 		log.Printf("Quit key pressed, shutting down.")
 	}
-}
-
-// FS implements the hello world file system.
-type FS struct{}
-
-func (FS) Root() (fs.Node, fuse.Error) {
-	return Dir{}, nil
-}
-
-// Dir implements both Node and Handle for the root directory.
-type Dir struct{}
-
-func (Dir) Attr() fuse.Attr {
-	return fuse.Attr{Inode: 1, Mode: os.ModeDir | 0555}
-}
-
-func (Dir) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-	if name == "hello" {
-		return File{}, nil
-	}
-	return nil, fuse.ENOENT
-}
-
-var dirDirs = []fuse.Dirent{
-	{Inode: 2, Name: "hello", Type: fuse.DT_File},
-}
-
-func (Dir) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
-	return dirDirs, nil
-}
-
-type File struct{}
-
-func (File) Attr() fuse.Attr {
-	return fuse.Attr{Mode: 0444}
-}
-
-func (File) ReadAll(intr fs.Intr) ([]byte, fuse.Error) {
-	return []byte("hello, world\n"), nil
 }

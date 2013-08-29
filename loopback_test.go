@@ -5,9 +5,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"syscall"
 	"testing"
+	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -67,9 +69,13 @@ func NewTestCase(t *testing.T) *testCase {
 
 func (this *testCase) Cleanup() {
 	log.Printf("Cleanup> unmounting...")
-	err := syscall.Unmount(this.mnt, 0)
-	if err != nil {
-		this.t.Fatalf("Unmount failed: %v", err)
+	for {
+		err := syscall.Unmount(this.mnt, 0)
+		if err == nil {
+			break
+		}
+		this.t.Logf("Unmount failed: %v", err)
+		time.Sleep(10 * time.Millisecond)
 	}
 
 	os.RemoveAll(this.tmpDir)
@@ -178,7 +184,8 @@ func TestWriteAppend(t *testing.T) {
 	tc := NewTestCase(t)
 	defer tc.Cleanup()
 
-	expected := []byte("Hello")
+	expected1 := []byte("Hello")
+	expected2 := []byte("Goodbye")
 
 	// Create (for write), write.
 	func() {
@@ -188,12 +195,12 @@ func TestWriteAppend(t *testing.T) {
 		}
 		defer f.Close()
 
-		n, err := f.Write(expected)
+		n, err := f.Write(expected1)
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
 		}
-		if n != len(expected) {
-			t.Errorf("Write mismatch: %v of %v", n, len(expected))
+		if n != len(expected1) {
+			t.Errorf("Write mismatch: %v of %v", n, len(expected1))
 		}
 	}()
 
@@ -209,16 +216,16 @@ func TestWriteAppend(t *testing.T) {
 		}
 		defer f.Close()
 
-		n, err := f.Write(expected)
+		n, err := f.Write(expected2)
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
 		}
-		if n != len(expected) {
-			t.Errorf("Write mismatch: %v of %v", n, len(expected))
+		if n != len(expected2) {
+			t.Errorf("Write mismatch: %v of %v", n, len(expected2))
 		}
 	}()
 
-	expected = append(expected, expected...)
+	expected := append(expected1, expected2...)
 
 	f3, err := os.Open(tc.origFile)
 	if err != nil {
@@ -236,5 +243,55 @@ func TestWriteAppend(t *testing.T) {
 
 	if !bytes.Equal(expected, actual) {
 		t.Errorf("Mismatch. Expected: %q, Actual: %q", expected, actual)
+	}
+}
+
+func TestGcc(t *testing.T) {
+	tc := NewTestCase(t)
+	defer tc.Cleanup()
+
+	const h_code = `
+// nothing to see here
+`
+
+	const c_code = `
+#include <stdio.h>
+#include "test.h"
+int main(int argc, char** argv) {
+	printf("Hello\n");
+	return 0;
+}
+`
+
+	log.Print("Creating test files")
+
+	err := ioutil.WriteFile(path.Join(tc.orig, "test.h"), []byte(h_code), 0644)
+	if err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	err = ioutil.WriteFile(path.Join(tc.orig, "main.c"), []byte(c_code), 0644)
+	if err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	cmd := exec.Command("gcc", "-c", "main.c", "-o", "main.o")
+	cmd.Dir = tc.mnt
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	log.Printf("Running: %v", cmd.Args)
+	err = cmd.Run()
+	if err != nil {
+		t.Fatalf("gcc failed: %v", err)
+	}
+
+	cmd = exec.Command("gcc", "main.o", "-o", "hi")
+	cmd.Dir = tc.mnt
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	log.Printf("Running: %v", cmd.Args)
+	err = cmd.Run()
+	if err != nil {
+		t.Fatalf("gcc failed: %v", err)
 	}
 }

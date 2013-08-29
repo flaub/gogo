@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"syscall"
+	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
@@ -90,6 +91,23 @@ func (this *LoopbackFS) Statfs(req *fuse.StatfsRequest, resp *fuse.StatfsRespons
 		close(this.onReady)
 		this.onReady = nil
 	}
+
+	var st syscall.Statfs_t
+	err := syscall.Statfs(this.root.path, &st)
+	if err != nil {
+		log.Printf("Statfs> failed: %v", err)
+		return fuse.EIO
+	}
+
+	resp.Blocks = st.Blocks
+	resp.Bfree = st.Bfree
+	resp.Bavail = st.Bavail
+	resp.Files = st.Files
+	resp.Ffree = st.Ffree
+	resp.Bsize = st.Bsize
+	// resp.Namelen =
+	// resp.Frsize =
+
 	return nil
 }
 
@@ -107,8 +125,7 @@ func (this *LoopbackFS) WaitDestroy() {
 }
 
 type LoopbackNode struct {
-	path    string
-	onReady chan bool
+	path string
 }
 
 func NewLoopbackNode(path string) *LoopbackNode {
@@ -149,13 +166,16 @@ func InfoToDirent(info os.FileInfo) fuse.Dirent {
 	}
 }
 
+func (this *LoopbackNode) Getattr(req *fuse.GetattrRequest, resp *fuse.GetattrResponse, intr fs.Intr) fuse.Error {
+	log.Printf("%q %v", this.path, req)
+	resp.AttrValid = 1 * time.Minute
+	resp.Attr = this.Attr()
+	return nil
+}
+
 func (this *LoopbackNode) Attr() fuse.Attr {
-	log.Printf("Attr> %q", this.path)
-	if this.onReady != nil {
-		close(this.onReady)
-		this.onReady = nil
-	}
-	st := syscall.Stat_t{}
+	// log.Printf("Attr> %q", this.path)
+	var st syscall.Stat_t
 	err := syscall.Stat(this.path, &st)
 	if err != nil {
 		log.Printf("Attr> failed: %v", err)
@@ -164,40 +184,42 @@ func (this *LoopbackNode) Attr() fuse.Attr {
 	return StatToAttr(&st)
 }
 
-func (this *LoopbackNode) Lookup(name string, intr fs.Intr) (fs.Node, fuse.Error) {
-	path := path.Join(this.path, name)
-	// log.Printf("Lookup> %q", path)
-	file, err := os.Open(path)
+func (this *LoopbackNode) Lookup(req *fuse.LookupRequest, resp *fuse.LookupResponse, intr fs.Intr) (fs.Node, fuse.Error) {
+	// log.Print(req)
+	path := path.Join(this.path, req.Name)
+	var st syscall.Stat_t
+	err := syscall.Stat(path, &st)
 	if err != nil {
 		return nil, fuse.ENOENT
 	}
-	defer file.Close()
 	return NewLoopbackNode(path), nil
 }
 
 func (this *LoopbackNode) Open(req *fuse.OpenRequest, resp *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
-	log.Printf("Open> %q (%v)", this.path, req)
+	log.Printf("%q %v", this.path, req)
 	file, err := os.OpenFile(this.path, int(req.Flags), 0)
 	if err != nil {
 		log.Printf("Open> failed: %v", err)
 		return nil, fuse.EIO
 	}
+	resp.Flags = 0
 	return NewLoopbackHandle(file), nil
 }
 
 func (this *LoopbackNode) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
+	log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
-	log.Printf("Create> %q (0x%x, %v)", path, req.Flags, req.Mode)
 	file, err := os.OpenFile(path, int(req.Flags)|os.O_CREATE, req.Mode)
 	if err != nil {
 		log.Printf("Create> failed: %v", err)
 		return nil, nil, fuse.EIO
 	}
+	resp.Flags = 0
 	return NewLoopbackNode(path), NewLoopbackHandle(file), nil
 }
 
 func (this *LoopbackNode) Setattr(req *fuse.SetattrRequest, resp *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
-	log.Printf("Setattr> %q", this.path)
+	// log.Printf("Setattr> %q", this.path)
 	if req.Valid.Mode() {
 		log.Printf("Setattr> %q Mode: %v", this.path, req.Mode)
 		err := os.Chmod(this.path, req.Mode)
@@ -223,13 +245,34 @@ func (this *LoopbackNode) Setattr(req *fuse.SetattrRequest, resp *fuse.SetattrRe
 		}
 	}
 	if req.Valid.Atime() || req.Valid.Mtime() {
-		log.Printf("Setattr> %q Atime: %v Mtime: %v", this.path, req.Atime, req.Mtime)
-		err := os.Chtimes(this.path, req.Atime, req.Mtime)
+		fi, err := os.Stat(this.path)
+		if err != nil {
+			log.Printf("Setattr> os.Stat() failed: %v", err)
+			return fuse.EIO
+		}
+		st, _ := fi.Sys().(*syscall.Stat_t)
+		var atime time.Time
+		if req.Valid.Atime() {
+			log.Printf("Setattr> %q Atime: %v", this.path, req.Atime)
+			atime = req.Atime
+		} else {
+			atime = time.Unix(st.Atimespec.Unix())
+		}
+		var mtime time.Time
+		if req.Valid.Mtime() {
+			log.Printf("Setattr> %q Mtime: %v", this.path, req.Mtime)
+			mtime = req.Mtime
+		} else {
+			mtime = time.Unix(st.Mtimespec.Unix())
+		}
+		err = os.Chtimes(this.path, atime, mtime)
 		if err != nil {
 			log.Printf("Setattr> os.Chtimes() failed: %v", err)
 			return fuse.EIO
 		}
 	}
+	resp.AttrValid = 1 * time.Minute
+	resp.Attr = this.Attr()
 	return nil
 }
 
@@ -244,7 +287,7 @@ func (this *LoopbackNode) Symlink(req *fuse.SymlinkRequest, intr fs.Intr) (fs.No
 }
 
 func (this *LoopbackNode) Readlink(req *fuse.ReadlinkRequest, intr fs.Intr) (string, fuse.Error) {
-	log.Printf("Readlink> %q", this.path)
+	log.Printf("%q %v", this.path, req)
 	result, err := os.Readlink(this.path)
 	if err != nil {
 		log.Printf("Readlink> failed: %v", err)
@@ -254,7 +297,7 @@ func (this *LoopbackNode) Readlink(req *fuse.ReadlinkRequest, intr fs.Intr) (str
 }
 
 func (this *LoopbackNode) Link(req *fuse.LinkRequest, old fs.Node, intr fs.Intr) (fs.Node, fuse.Error) {
-	log.Printf("Link> %q", this.path)
+	log.Printf("%q %v", this.path, req)
 	err := os.Link(this.path, req.NewName)
 	if err != nil {
 		log.Printf("Link> failed: %v", err)
@@ -264,8 +307,8 @@ func (this *LoopbackNode) Link(req *fuse.LinkRequest, old fs.Node, intr fs.Intr)
 }
 
 func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
+	log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
-	log.Printf("Remove> %q", path)
 	err := os.Remove(path)
 	if err != nil {
 		log.Printf("Remove> failed: %v", err)
@@ -280,8 +323,8 @@ func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Err
 // }
 
 func (this *LoopbackNode) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
+	log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
-	log.Printf("Mkdir> %q", path)
 	err := os.Mkdir(path, req.Mode)
 	if err != nil {
 		log.Printf("Mkdir> failed: %v", err)
@@ -302,8 +345,8 @@ func (this *LoopbackNode) Rename(req *fuse.RenameRequest, newDir fs.Node, intr f
 }
 
 func (this *LoopbackNode) Mknod(req *fuse.MknodRequest, intr fs.Intr) (fs.Node, fuse.Error) {
+	log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
-	log.Printf("Mknod> %q", this.path)
 	err := syscall.Mknod(path, uint32(req.Mode), int(req.Rdev))
 	if err != nil {
 		log.Printf("Mknod> failed: %v", err)
@@ -313,7 +356,7 @@ func (this *LoopbackNode) Mknod(req *fuse.MknodRequest, intr fs.Intr) (fs.Node, 
 }
 
 func (this *LoopbackNode) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error {
-	log.Printf("Fsync> %q", this.path)
+	log.Printf("%q %v", this.path, req)
 	return fuse.ENOSYS
 }
 
@@ -359,7 +402,7 @@ func (this *LoopbackHandle) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
 }
 
 func (this *LoopbackHandle) Read(req *fuse.ReadRequest, resp *fuse.ReadResponse, intr fs.Intr) fuse.Error {
-	log.Printf("Read> %q (%v)", this.file.Name(), req)
+	log.Printf("%q %v", this.file.Name(), req)
 	resp.Data = make([]byte, req.Size)
 	n, err := this.file.ReadAt(resp.Data, req.Offset)
 	if err != nil && err != io.EOF {
@@ -371,7 +414,7 @@ func (this *LoopbackHandle) Read(req *fuse.ReadRequest, resp *fuse.ReadResponse,
 }
 
 func (this *LoopbackHandle) Write(req *fuse.WriteRequest, resp *fuse.WriteResponse, intr fs.Intr) fuse.Error {
-	log.Printf("Write> %q (%v)", this.file.Name(), req)
+	log.Printf("%q %v", this.file.Name(), req)
 	var n int
 	var err error
 	if req.Offset == 0 {
@@ -388,7 +431,7 @@ func (this *LoopbackHandle) Write(req *fuse.WriteRequest, resp *fuse.WriteRespon
 }
 
 func (this *LoopbackHandle) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Error {
-	log.Printf("Flush> %q (%v)", this.file.Name(), req)
+	log.Printf("%q %v", this.file.Name(), req)
 	err := this.file.Sync()
 	if err != nil {
 		log.Printf("Flush> failed: %v", err)
@@ -398,7 +441,7 @@ func (this *LoopbackHandle) Flush(req *fuse.FlushRequest, intr fs.Intr) fuse.Err
 }
 
 func (this *LoopbackHandle) Release(req *fuse.ReleaseRequest, intr fs.Intr) fuse.Error {
-	log.Printf("Release> %q", this.file.Name())
+	log.Printf("%q %v", this.file.Name(), req)
 	err := this.file.Close()
 	if err != nil {
 		log.Printf("Release> failed: %v", err)

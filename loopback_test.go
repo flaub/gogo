@@ -15,7 +15,7 @@ import (
 	"bazil.org/fuse/fs"
 )
 
-type loTestCase struct {
+type loopbackTest struct {
 	tmpDir      string
 	orig        string
 	mnt         string
@@ -28,8 +28,8 @@ type loTestCase struct {
 	fs          *LoopbackFS
 }
 
-func newLoTestCase(t *testing.T) *loTestCase {
-	this := &loTestCase{
+func newLoopbackTest(t *testing.T) *loopbackTest {
+	this := &loopbackTest{
 		t: t,
 	}
 
@@ -67,7 +67,7 @@ func newLoTestCase(t *testing.T) *loTestCase {
 	return this
 }
 
-func (this *loTestCase) Cleanup() {
+func (this *loopbackTest) Cleanup() {
 	log.Printf("Cleanup> unmounting...")
 	for {
 		err := syscall.Unmount(this.mnt, 0)
@@ -85,7 +85,7 @@ func (this *loTestCase) Cleanup() {
 }
 
 func TestLoRead(t *testing.T) {
-	tc := newLoTestCase(t)
+	tc := newLoopbackTest(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -110,7 +110,7 @@ func TestLoRead(t *testing.T) {
 }
 
 func TestLoRemove(t *testing.T) {
-	tc := newLoTestCase(t)
+	tc := newLoopbackTest(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -131,7 +131,7 @@ func TestLoRemove(t *testing.T) {
 }
 
 func TestLoWrite(t *testing.T) {
-	tc := newLoTestCase(t)
+	tc := newLoopbackTest(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -181,7 +181,7 @@ func TestLoWrite(t *testing.T) {
 }
 
 func TestLoWriteAppend(t *testing.T) {
-	tc := newLoTestCase(t)
+	tc := newLoopbackTest(t)
 	defer tc.Cleanup()
 
 	expected1 := []byte("Hello")
@@ -247,7 +247,7 @@ func TestLoWriteAppend(t *testing.T) {
 }
 
 func TestLoGcc(t *testing.T) {
-	tc := newLoTestCase(t)
+	tc := newLoopbackTest(t)
 	defer tc.Cleanup()
 
 	const h_code = `

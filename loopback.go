@@ -63,11 +63,36 @@ type LoopbackFS struct {
 	onDestroy chan bool
 }
 
+type LoopbackNode struct {
+	path string
+	fs   FuseFS
+}
+
+type LoopbackHandle struct {
+	file *os.File
+	fs   FuseFS
+}
+
 func NewLoopbackFS(path string) *LoopbackFS {
-	return &LoopbackFS{
-		root:      NewLoopbackNode(path),
+	this := &LoopbackFS{
 		onReady:   make(chan bool),
 		onDestroy: make(chan bool),
+	}
+	this.root = NewLoopbackNode(this, path)
+	return this
+}
+
+func NewLoopbackNode(fs FuseFS, path string) *LoopbackNode {
+	return &LoopbackNode{
+		path: path,
+		fs:   fs,
+	}
+}
+
+func NewLoopbackHandle(fs FuseFS, file *os.File) *LoopbackHandle {
+	return &LoopbackHandle{
+		file: file,
+		fs:   fs,
 	}
 }
 
@@ -124,14 +149,12 @@ func (this *LoopbackFS) WaitDestroy() {
 	<-this.onDestroy
 }
 
-type LoopbackNode struct {
-	path string
+func (this *LoopbackFS) NewNode(path string) fs.Node {
+	return NewLoopbackNode(this, path)
 }
 
-func NewLoopbackNode(path string) *LoopbackNode {
-	return &LoopbackNode{
-		path: path,
-	}
+func (this *LoopbackFS) NewHandle(file *os.File) fs.Handle {
+	return NewLoopbackHandle(this, file)
 }
 
 // func (this *LoopbackNode) Getattr(req *fuse.GetattrRequest, resp *fuse.GetattrResponse, intr fs.Intr) fuse.Error {
@@ -158,20 +181,21 @@ func (this *LoopbackNode) Lookup(req *fuse.LookupRequest, resp *fuse.LookupRespo
 	var st syscall.Stat_t
 	err := syscall.Stat(path, &st)
 	if err != nil {
+		// log.Printf("ENOENT: %v", req)
 		return nil, fuse.ENOENT
 	}
-	return NewLoopbackNode(path), nil
+	return this.fs.NewNode(path), nil
 }
 
 func (this *LoopbackNode) Open(req *fuse.OpenRequest, resp *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
-	// log.Printf("%q %v", this.path, req)
+	// log.Printf("LoopbackNode> %q %v", this.path, req)
 	file, err := os.OpenFile(this.path, int(req.Flags), 0)
 	if err != nil {
 		log.Printf("Open> failed: %v", err)
 		return nil, fuse.EIO
 	}
 	resp.Flags = 0
-	return NewLoopbackHandle(file), nil
+	return this.fs.NewHandle(file), nil
 }
 
 func (this *LoopbackNode) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
@@ -183,7 +207,7 @@ func (this *LoopbackNode) Create(req *fuse.CreateRequest, resp *fuse.CreateRespo
 		return nil, nil, fuse.EIO
 	}
 	resp.Flags = 0
-	return NewLoopbackNode(path), NewLoopbackHandle(file), nil
+	return this.fs.NewNode(path), this.fs.NewHandle(file), nil
 }
 
 func (this *LoopbackNode) Setattr(req *fuse.SetattrRequest, resp *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
@@ -283,7 +307,7 @@ func (this *LoopbackNode) Symlink(req *fuse.SymlinkRequest, intr fs.Intr) (fs.No
 		log.Printf("Symlink> failed: %v", err)
 		return nil, fuse.EIO
 	}
-	return NewLoopbackNode(req.NewName), nil
+	return this.fs.NewNode(req.NewName), nil
 }
 
 func (this *LoopbackNode) Readlink(req *fuse.ReadlinkRequest, intr fs.Intr) (string, fuse.Error) {
@@ -303,7 +327,7 @@ func (this *LoopbackNode) Link(req *fuse.LinkRequest, old fs.Node, intr fs.Intr)
 		log.Printf("Link> failed: %v", err)
 		return nil, fuse.EIO
 	}
-	return NewLoopbackNode(req.NewName), nil
+	return this.fs.NewNode(req.NewName), nil
 }
 
 func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
@@ -330,7 +354,7 @@ func (this *LoopbackNode) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, 
 		log.Printf("Mkdir> failed: %v", err)
 		return nil, fuse.EIO
 	}
-	return NewLoopbackNode(path), fuse.ENOSYS
+	return this.fs.NewNode(path), fuse.ENOSYS
 }
 
 func (this *LoopbackNode) Rename(req *fuse.RenameRequest, newDir fs.Node, intr fs.Intr) fuse.Error {
@@ -340,7 +364,7 @@ func (this *LoopbackNode) Rename(req *fuse.RenameRequest, newDir fs.Node, intr f
 		log.Printf("Rename> failed: %v", err)
 		return fuse.EIO
 	}
-	newDir = NewLoopbackNode(req.NewName)
+	newDir = this.fs.NewNode(req.NewName)
 	return nil
 }
 
@@ -352,7 +376,7 @@ func (this *LoopbackNode) Mknod(req *fuse.MknodRequest, intr fs.Intr) (fs.Node, 
 		log.Printf("Mknod> failed: %v", err)
 		return nil, fuse.EIO
 	}
-	return NewLoopbackNode(path), nil
+	return this.fs.NewNode(path), nil
 }
 
 func (this *LoopbackNode) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error {
@@ -362,14 +386,6 @@ func (this *LoopbackNode) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error
 
 func (this *LoopbackNode) Forget() {
 	// log.Printf("Forget> %q", this.path)
-}
-
-type LoopbackHandle struct {
-	file *os.File
-}
-
-func NewLoopbackHandle(file *os.File) *LoopbackHandle {
-	return &LoopbackHandle{file}
 }
 
 func (this *LoopbackHandle) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {

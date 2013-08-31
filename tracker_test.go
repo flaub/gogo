@@ -14,7 +14,7 @@ import (
 	"bazil.org/fuse/fs"
 )
 
-type trTestCase struct {
+type trackerTest struct {
 	tmpDir string
 	orig   string
 	mnt    string
@@ -23,8 +23,8 @@ type trTestCase struct {
 	fs     *TrackerFS
 }
 
-func newTrTestCase(t *testing.T) *trTestCase {
-	this := &trTestCase{
+func newTrackerTest(t *testing.T) *trackerTest {
+	this := &trackerTest{
 		t: t,
 	}
 
@@ -54,7 +54,7 @@ func newTrTestCase(t *testing.T) *trTestCase {
 	return this
 }
 
-func (this *trTestCase) Cleanup() {
+func (this *trackerTest) Cleanup() {
 	log.Printf("Cleanup> unmounting...")
 	for {
 		err := syscall.Unmount(this.mnt, 0)
@@ -71,13 +71,8 @@ func (this *trTestCase) Cleanup() {
 	this.fs.WaitDestroy()
 }
 
-func TestTracker(t *testing.T) {
-	tracker := NewTrackerFS("/tmp")
-	tracker.Init(nil, nil, nil)
-}
-
 func TestTrGcc(t *testing.T) {
-	tc := newTrTestCase(t)
+	tc := newTrackerTest(t)
 	defer tc.Cleanup()
 
 	const h_code = `

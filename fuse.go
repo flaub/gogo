@@ -15,6 +15,8 @@ type FuseFS interface {
 	Destroy()
 	WaitReady()
 	WaitDestroy()
+	NewNode(path string) fs.Node
+	NewHandle(file *os.File) fs.Handle
 }
 
 type FuseNode interface {

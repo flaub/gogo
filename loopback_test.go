@@ -15,7 +15,7 @@ import (
 	"bazil.org/fuse/fs"
 )
 
-type testCase struct {
+type loTestCase struct {
 	tmpDir      string
 	orig        string
 	mnt         string
@@ -25,11 +25,11 @@ type testCase struct {
 	origSubdir  string
 	t           *testing.T
 	conn        *fuse.Conn
-	lofs        *LoopbackFS
+	fs          *LoopbackFS
 }
 
-func NewTestCase(t *testing.T) *testCase {
-	this := &testCase{
+func newLoTestCase(t *testing.T) *loTestCase {
+	this := &loTestCase{
 		t: t,
 	}
 
@@ -54,20 +54,20 @@ func NewTestCase(t *testing.T) *testCase {
 	this.origFile = path.Join(this.orig, name)
 	this.origSubdir = path.Join(this.orig, subdir)
 
-	this.lofs = NewLoopbackFS(this.orig)
+	this.fs = NewLoopbackFS(this.orig)
 
 	this.conn, err = fuse.Mount(this.mnt)
 	if err != nil {
 		t.Fatalf("fuse.Mount() failed: %v", err)
 	}
 
-	go fs.Serve(this.conn, this.lofs)
-	this.lofs.WaitReady()
+	go fs.Serve(this.conn, this.fs)
+	this.fs.WaitReady()
 
 	return this
 }
 
-func (this *testCase) Cleanup() {
+func (this *loTestCase) Cleanup() {
 	log.Printf("Cleanup> unmounting...")
 	for {
 		err := syscall.Unmount(this.mnt, 0)
@@ -81,11 +81,11 @@ func (this *testCase) Cleanup() {
 	os.RemoveAll(this.tmpDir)
 
 	log.Printf("Cleanup> waiting for Destroy...")
-	this.lofs.WaitDestroy()
+	this.fs.WaitDestroy()
 }
 
-func TestRead(t *testing.T) {
-	tc := NewTestCase(t)
+func TestLoRead(t *testing.T) {
+	tc := newLoTestCase(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -109,8 +109,8 @@ func TestRead(t *testing.T) {
 	}
 }
 
-func TestRemove(t *testing.T) {
-	tc := NewTestCase(t)
+func TestLoRemove(t *testing.T) {
+	tc := newLoTestCase(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -130,8 +130,8 @@ func TestRemove(t *testing.T) {
 	}
 }
 
-func TestWrite(t *testing.T) {
-	tc := NewTestCase(t)
+func TestLoWrite(t *testing.T) {
+	tc := newLoTestCase(t)
 	defer tc.Cleanup()
 
 	expected := []byte("Hello")
@@ -180,8 +180,8 @@ func TestWrite(t *testing.T) {
 	}
 }
 
-func TestWriteAppend(t *testing.T) {
-	tc := NewTestCase(t)
+func TestLoWriteAppend(t *testing.T) {
+	tc := newLoTestCase(t)
 	defer tc.Cleanup()
 
 	expected1 := []byte("Hello")
@@ -246,8 +246,8 @@ func TestWriteAppend(t *testing.T) {
 	}
 }
 
-func TestGcc(t *testing.T) {
-	tc := NewTestCase(t)
+func TestLoGcc(t *testing.T) {
+	tc := newLoTestCase(t)
 	defer tc.Cleanup()
 
 	const h_code = `

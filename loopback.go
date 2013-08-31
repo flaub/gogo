@@ -72,7 +72,7 @@ func NewLoopbackFS(path string) *LoopbackFS {
 }
 
 func (this *LoopbackFS) Root() (fs.Node, fuse.Error) {
-	log.Printf("Root> %v", this.root.path)
+	log.Printf("LoopbackFS.Root> %v", this.root.path)
 	return this.root, nil
 }
 
@@ -164,7 +164,7 @@ func (this *LoopbackNode) Lookup(req *fuse.LookupRequest, resp *fuse.LookupRespo
 }
 
 func (this *LoopbackNode) Open(req *fuse.OpenRequest, resp *fuse.OpenResponse, intr fs.Intr) (fs.Handle, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	file, err := os.OpenFile(this.path, int(req.Flags), 0)
 	if err != nil {
 		log.Printf("Open> failed: %v", err)
@@ -175,7 +175,7 @@ func (this *LoopbackNode) Open(req *fuse.OpenRequest, resp *fuse.OpenResponse, i
 }
 
 func (this *LoopbackNode) Create(req *fuse.CreateRequest, resp *fuse.CreateResponse, intr fs.Intr) (fs.Node, fs.Handle, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
 	file, err := os.OpenFile(path, int(req.Flags)|os.O_CREATE, req.Mode)
 	if err != nil {
@@ -189,54 +189,27 @@ func (this *LoopbackNode) Create(req *fuse.CreateRequest, resp *fuse.CreateRespo
 func (this *LoopbackNode) Setattr(req *fuse.SetattrRequest, resp *fuse.SetattrResponse, intr fs.Intr) fuse.Error {
 	// log.Printf("Setattr> %q", this.path)
 	if req.Valid.Mode() {
-		log.Printf("Setattr> %q Mode: %v", this.path, req.Mode)
-		err := os.Chmod(this.path, req.Mode)
+		err := this.Chmod(req)
 		if err != nil {
-			log.Printf("Setattr> os.Chmod() failed: %v", err)
-			return fuse.EIO
+			return err
 		}
 	}
 	if req.Valid.Uid() || req.Valid.Gid() {
-		log.Printf("Setattr> %q uid: %v gid %v", this.path, req.Uid, req.Gid)
-		err := os.Chown(this.path, int(req.Uid), int(req.Gid))
+		err := this.Chown(req)
 		if err != nil {
-			log.Printf("Setattr> os.Chown() failed: %v", err)
-			return fuse.EIO
+			return err
 		}
 	}
 	if req.Valid.Size() {
-		log.Printf("Setattr> %q Size: %v", this.path, req.Size)
-		err := os.Truncate(this.path, int64(req.Size))
+		err := this.Truncate(req)
 		if err != nil {
-			log.Printf("Setattr> os.Truncate() failed: %v", err)
-			return fuse.EIO
+			return err
 		}
 	}
 	if req.Valid.Atime() || req.Valid.Mtime() {
-		fi, err := os.Stat(this.path)
+		err := this.Chtimes(req)
 		if err != nil {
-			log.Printf("Setattr> os.Stat() failed: %v", err)
-			return fuse.EIO
-		}
-		st, _ := fi.Sys().(*syscall.Stat_t)
-		var atime time.Time
-		if req.Valid.Atime() {
-			log.Printf("Setattr> %q Atime: %v", this.path, req.Atime)
-			atime = req.Atime
-		} else {
-			atime = time.Unix(st.Atimespec.Unix())
-		}
-		var mtime time.Time
-		if req.Valid.Mtime() {
-			log.Printf("Setattr> %q Mtime: %v", this.path, req.Mtime)
-			mtime = req.Mtime
-		} else {
-			mtime = time.Unix(st.Mtimespec.Unix())
-		}
-		err = os.Chtimes(this.path, atime, mtime)
-		if err != nil {
-			log.Printf("Setattr> os.Chtimes() failed: %v", err)
-			return fuse.EIO
+			return err
 		}
 	}
 	resp.AttrValid = 1 * time.Minute
@@ -244,8 +217,67 @@ func (this *LoopbackNode) Setattr(req *fuse.SetattrRequest, resp *fuse.SetattrRe
 	return nil
 }
 
+func (this *LoopbackNode) Chmod(req *fuse.SetattrRequest) fuse.Error {
+	// log.Printf("Setattr> %q Mode: %v", this.path, req.Mode)
+	err := os.Chmod(this.path, req.Mode)
+	if err != nil {
+		log.Printf("Setattr> os.Chmod() failed: %v", err)
+		return fuse.EIO
+	}
+	return nil
+}
+
+func (this *LoopbackNode) Chown(req *fuse.SetattrRequest) fuse.Error {
+	// log.Printf("Setattr> %q uid: %v gid %v", this.path, req.Uid, req.Gid)
+	err := os.Chown(this.path, int(req.Uid), int(req.Gid))
+	if err != nil {
+		log.Printf("Setattr> os.Chown() failed: %v", err)
+		return fuse.EIO
+	}
+	return nil
+}
+
+func (this *LoopbackNode) Chtimes(req *fuse.SetattrRequest) fuse.Error {
+	fi, err := os.Stat(this.path)
+	if err != nil {
+		log.Printf("Setattr> os.Stat() failed: %v", err)
+		return fuse.EIO
+	}
+	st, _ := fi.Sys().(*syscall.Stat_t)
+	var atime time.Time
+	if req.Valid.Atime() {
+		// log.Printf("Setattr> %q Atime: %v", this.path, req.Atime)
+		atime = req.Atime
+	} else {
+		atime = time.Unix(st.Atimespec.Unix())
+	}
+	var mtime time.Time
+	if req.Valid.Mtime() {
+		// log.Printf("Setattr> %q Mtime: %v", this.path, req.Mtime)
+		mtime = req.Mtime
+	} else {
+		mtime = time.Unix(st.Mtimespec.Unix())
+	}
+	err = os.Chtimes(this.path, atime, mtime)
+	if err != nil {
+		log.Printf("Setattr> os.Chtimes() failed: %v", err)
+		return fuse.EIO
+	}
+	return nil
+}
+
+func (this *LoopbackNode) Truncate(req *fuse.SetattrRequest) fuse.Error {
+	// log.Printf("Setattr> %q Size: %v", this.path, req.Size)
+	err := os.Truncate(this.path, int64(req.Size))
+	if err != nil {
+		log.Printf("Setattr> os.Truncate() failed: %v", err)
+		return fuse.EIO
+	}
+	return nil
+}
+
 func (this *LoopbackNode) Symlink(req *fuse.SymlinkRequest, intr fs.Intr) (fs.Node, fuse.Error) {
-	log.Printf("Symlink> %q -> %q", this.path, req.NewName)
+	// log.Printf("Symlink> %q -> %q", this.path, req.NewName)
 	err := os.Symlink(this.path, req.NewName)
 	if err != nil {
 		log.Printf("Symlink> failed: %v", err)
@@ -255,7 +287,7 @@ func (this *LoopbackNode) Symlink(req *fuse.SymlinkRequest, intr fs.Intr) (fs.No
 }
 
 func (this *LoopbackNode) Readlink(req *fuse.ReadlinkRequest, intr fs.Intr) (string, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	result, err := os.Readlink(this.path)
 	if err != nil {
 		log.Printf("Readlink> failed: %v", err)
@@ -265,7 +297,7 @@ func (this *LoopbackNode) Readlink(req *fuse.ReadlinkRequest, intr fs.Intr) (str
 }
 
 func (this *LoopbackNode) Link(req *fuse.LinkRequest, old fs.Node, intr fs.Intr) (fs.Node, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	err := os.Link(this.path, req.NewName)
 	if err != nil {
 		log.Printf("Link> failed: %v", err)
@@ -275,7 +307,7 @@ func (this *LoopbackNode) Link(req *fuse.LinkRequest, old fs.Node, intr fs.Intr)
 }
 
 func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
 	err := os.Remove(path)
 	if err != nil {
@@ -291,7 +323,7 @@ func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Err
 // }
 
 func (this *LoopbackNode) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
 	err := os.Mkdir(path, req.Mode)
 	if err != nil {
@@ -302,7 +334,7 @@ func (this *LoopbackNode) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, 
 }
 
 func (this *LoopbackNode) Rename(req *fuse.RenameRequest, newDir fs.Node, intr fs.Intr) fuse.Error {
-	log.Printf("Rename> %q -> %q", this.path, req.NewName)
+	// log.Printf("Rename> %q -> %q", this.path, req.NewName)
 	err := os.Rename(this.path, req.NewName)
 	if err != nil {
 		log.Printf("Rename> failed: %v", err)
@@ -313,7 +345,7 @@ func (this *LoopbackNode) Rename(req *fuse.RenameRequest, newDir fs.Node, intr f
 }
 
 func (this *LoopbackNode) Mknod(req *fuse.MknodRequest, intr fs.Intr) (fs.Node, fuse.Error) {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	path := path.Join(this.path, req.Name)
 	err := syscall.Mknod(path, uint32(req.Mode), int(req.Rdev))
 	if err != nil {
@@ -324,7 +356,7 @@ func (this *LoopbackNode) Mknod(req *fuse.MknodRequest, intr fs.Intr) (fs.Node, 
 }
 
 func (this *LoopbackNode) Fsync(req *fuse.FsyncRequest, intr fs.Intr) fuse.Error {
-	log.Printf("%q %v", this.path, req)
+	// log.Printf("%q %v", this.path, req)
 	return fuse.ENOSYS
 }
 
@@ -341,7 +373,7 @@ func NewLoopbackHandle(file *os.File) *LoopbackHandle {
 }
 
 func (this *LoopbackHandle) ReadDir(intr fs.Intr) ([]fuse.Dirent, fuse.Error) {
-	log.Printf("ReadDir> %q", this.file.Name())
+	// log.Printf("ReadDir> %q", this.file.Name())
 
 	want := 500
 	output := make([]fuse.Dirent, 0, want)

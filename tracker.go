@@ -3,12 +3,20 @@ package main
 import (
 	"log"
 	"os"
+	"os/exec"
 	"syscall"
 	"time"
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 )
+
+type Tracker struct {
+	mnt  string
+	orig string
+	conn *fuse.Conn
+	fs   *TrackerFS
+}
 
 type TrackerFS struct {
 	*LoopbackFS
@@ -22,6 +30,45 @@ type TrackerNode struct {
 
 type TrackerHandle struct {
 	*LoopbackHandle
+}
+
+func NewTracker(mnt, orig string) *Tracker {
+	// mnt & orig must exist
+	this := &Tracker{
+		mnt:  mnt,
+		orig: orig,
+	}
+	this.fs = NewTrackerFS(this.orig)
+	var err error
+	this.conn, err = fuse.Mount(this.mnt)
+	if err != nil {
+		panic(err)
+	}
+	return this
+}
+
+func (this *Tracker) Cleanup() {
+	// log.Printf("Cleanup> unmounting...")
+	for {
+		err := syscall.Unmount(this.mnt, 0)
+		if err == nil {
+			break
+		}
+		log.Printf("Unmount failed: %v", err)
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// log.Printf("Cleanup> waiting for Destroy...")
+	this.fs.WaitDestroy()
+}
+
+func (this *Tracker) Exec(name string, arg ...string) error {
+	cmd := exec.Command(name, arg...)
+	cmd.Dir = this.mnt
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	log.Printf("Running: %v", cmd.Args)
+	return cmd.Run()
 }
 
 func NewTrackerFS(path string) *TrackerFS {

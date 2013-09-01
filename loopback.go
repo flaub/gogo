@@ -341,10 +341,15 @@ func (this *LoopbackNode) Remove(req *fuse.RemoveRequest, intr fs.Intr) fuse.Err
 	return nil
 }
 
-// func (this *LoopbackNode) Access(req *fuse.AccessRequest, intr fs.Intr) fuse.Error {
-// 	log.Printf("Access: %q", this.path)
-// 	return nil
-// }
+func (this *LoopbackNode) Access(req *fuse.AccessRequest, intr fs.Intr) fuse.Error {
+	// log.Printf("Access> %q %v", this.path, req)
+	err := syscall.Access(this.path, req.Mask)
+	if err != nil {
+		log.Printf("Access> failed :%v", err)
+		return fuse.EPERM
+	}
+	return nil
+}
 
 func (this *LoopbackNode) Mkdir(req *fuse.MkdirRequest, intr fs.Intr) (fs.Node, fuse.Error) {
 	// log.Printf("%q %v", this.path, req)
@@ -433,11 +438,11 @@ func (this *LoopbackHandle) Write(req *fuse.WriteRequest, resp *fuse.WriteRespon
 	// log.Printf("%q %v", this.file.Name(), req)
 	var n int
 	var err error
-	if req.Offset == 0 {
-		n, err = this.file.Write(req.Data)
-	} else {
-		n, err = this.file.WriteAt(req.Data, req.Offset)
-	}
+	// if req.Offset == 0 {
+	// 	n, err = this.file.Write(req.Data)
+	// } else {
+	n, err = this.file.WriteAt(req.Data, req.Offset)
+	// }
 	if err != nil {
 		log.Printf("Write> failed: %v", err)
 		return fuse.EIO

@@ -6,8 +6,7 @@
 			"path": "/Users/flaub/src/anomalies/gogo"
 		},
 		{
-			"follow_symlinks": true,
-			"path": "/Users/flaub/src/vendor/tup"
+			"path": "/Users/flaub/src/github/tup"
 		}
 	]
 }

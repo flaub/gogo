@@ -1,4 +1,4 @@
 gogo
 ====
 
-A go based build system inspired by Tup
+A tool for running arbitrary commands when file system changes occur.

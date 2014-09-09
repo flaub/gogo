@@ -54,6 +54,7 @@ func (this *Rule) watch() {
 		}
 	}()
 
+	log.Println("Watching path:", this.Path)
 	err = watcher.Watch(this.Path)
 	if err != nil {
 		log.Fatal(err)
@@ -77,7 +78,7 @@ func (this *Rule) ignore(evt *fsnotify.FileEvent) bool {
 }
 
 func (this *Rule) run() {
-	// log.Println("run:", this.Cmd)
+	log.Println("run:", this.Cmd)
 	cmd := exec.Command(this.Cmd, this.Args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
